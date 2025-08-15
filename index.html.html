@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>Image Tool Pro — Resize / Crop / Format (+Target KB)</title>
+<style>
+  :root { --pri:#0d6efd; --ok:#28a745; --bg:#f0f2f5; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, Arial, sans-serif; background: var(--bg); }
+  .container { max-width: 980px; margin: 24px auto; background:#fff; padding:22px; border-radius: 14px; box-shadow:0 6px 20px rgba(0,0,0,.06); }
+  h1 { margin: 0 0 16px; }
+  .mode-buttons { display:flex; gap:10px; flex-wrap: wrap; margin: 10px 0 18px; }
+  .mode-buttons button{ padding:10px 16px; border:1px solid #ddd; background:#f8f9fa; border-radius:8px; cursor:pointer }
+  .mode-buttons button.active{ background:var(--pri); color:#fff; border-color:var(--pri) }
+  .row { display:flex; gap:12px; flex-wrap: wrap; align-items:center; justify-content:center; }
+  .ctrl { background:#f8f9fa; border:1px solid #e9ecef; border-radius:8px; padding:10px 12px; }
+  .ctrl label { font-size:12px; color:#555; display:block; margin-bottom:6px; text-align:left; }
+  .ctrl input[type="number"], .ctrl input[type="text"], .ctrl select { width:170px; padding:8px; border:1px solid #dcdcdc; border-radius:6px; }
+  .ctrl input[type="range"]{ width:220px; }
+  .hint { font-size:12px; color:#666; margin-top:6px; }
+  .drop { border:2px dashed #b9bdc4; padding:22px; border-radius:12px; background:#fbfbfc; text-align:center; cursor:pointer; }
+  .drop:hover{ background:#f3f6ff; border-color:var(--pri) }
+  .canvas-wrap{ margin-top:16px; }
+  canvas { max-width:100%; border:1px solid #e6e6e6; border-radius:8px; background:#fff; cursor: crosshair; }
+  .actions { margin-top:16px; display:flex; gap:12px; justify-content:center; flex-wrap: wrap; }
+  .btn { padding:10px 16px; border:0; border-radius:8px; background:var(--ok); color:#fff; cursor:pointer; }
+  .btn.secondary{ background:#6c757d; }
+  .note { font-size:12px; color:#444; text-align:center; margin-top:6px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Image Tool Pro</h1>
+
+  <div class="mode-buttons">
+    <button id="btnResize" class="active">Resize</button>
+    <button id="btnCrop">Crop</button>
+    <button id="btnFormat">Format</button>
+  </div>
+
+  <div class="drop" id="drop">
+    <strong>Drag & Drop</strong> image here or <u>click to upload</u>
+    <input id="file" type="file" accept="image/*" style="display:none" />
+  </div>
+
+  <!-- Controls: RESIZE -->
+  <div id="resizeCtrls">
+    <div class="row">
+      <div class="ctrl">
+        <label>Width (px)</label>
+        <input type="number" id="inW" placeholder="e.g. 1080" />
+      </div>
+      <div class="ctrl">
+        <label>Height (px)</label>
+        <input type="number" id="inH" placeholder="e.g. 1080" />
+      </div>
+      <div class="ctrl">
+        <label>Scale (%)</label>
+        <input type="range" id="inScale" min="10" max="300" value="100" />
+        <div class="hint"><span id="scaleVal">100%</span></div>
+      </div>
+      <div class="ctrl">
+        <label>Keep Aspect Ratio</label>
+        <div><input type="checkbox" id="lockAR" checked /> lock</div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <div class="ctrl">
+        <label>Output Format</label>
+        <select id="outFmtResize">
+          <option value="image/jpeg">JPG</option>
+          <option value="image/webp">WEBP</option>
+          <option value="image/png">PNG (lossless)</option>
+        </select>
+      </div>
+      <div class="ctrl">
+        <label>Target Size (KB) — optional</label>
+        <input type="number" id="targetKB" placeholder="e.g. 200" />
+        <div class="hint">JPG/WEBP par quality adjust hoga. PNG par size control limited.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls: CROP -->
+  <div id="cropCtrls" style="display:none">
+    <div class="row">
+      <div class="ctrl">
+        <label>Guide</label>
+        <div class="hint">Mouse se area select karein. Release karte hi selection lock ho jayega; nayi selection ke liye dobara drag karein.</div>
+      </div>
+      <div class="ctrl">
+        <label>Output Format</label>
+        <select id="outFmtCrop">
+          <option value="image/png">PNG</option>
+          <option value="image/jpeg">JPG</option>
+          <option value="image/webp">WEBP</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls: FORMAT -->
+  <div id="formatCtrls" style="display:none">
+    <div class="row">
+      <div class="ctrl">
+        <label>Output Format</label>
+        <select id="outFmtOnly">
+          <option value="image/jpeg">JPG</option>
+          <option value="image/webp">WEBP</option>
+          <option value="image/png">PNG</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="canvas-wrap">
+    <canvas id="cv"></canvas>
+  </div>
+
+  <div class="actions">
+    <button class="btn" id="btnDownload">Download</button>
+    <button class="btn secondary" id="btnReset">Reset</button>
+  </div>
+  <div class="note">Tip: High-DPI photos ko compress karke target KB hit karne ke liye JPG/WEBP choose karein.</div>
+</div>
+
+<script>
+(() => {
+  let mode = "resize";
+  const btnResize = document.getElementById("btnResize");
+  const btnCrop = document.getElementById("btnCrop");
+  const btnFormat = document.getElementById("btnFormat");
+
+  const resizeCtrls = document.getElementById("resizeCtrls");
+  const cropCtrls = document.getElementById("cropCtrls");
+  const formatCtrls = document.getElementById("formatCtrls");
+
+  const drop = document.getElementById("drop");
+  const fileInput = document.getElementById("file");
+  const cv = document.getElementById("cv");
+  const ctx = cv.getContext("2d");
+
+  const inW = document.getElementById("inW");
+  const inH = document.getElementById("inH");
+  const inScale = document.getElementById("inScale");
+  const scaleVal = document.getElementById("scaleVal");
+  const lockAR = document.getElementById("lockAR");
+  const outFmtResize = document.getElementById("outFmtResize");
+  const targetKB = document.getElementById("targetKB");
+
+  const outFmtCrop = document.getElementById("outFmtCrop");
+  const outFmtOnly = document.getElementById("outFmtOnly");
+
+  const btnDownload = document.getElementById("btnDownload");
+  const btnReset = document.getElementById("btnReset");
+
+  let img = new Image();
+  let naturalW = 0, naturalH = 0, aspect = 1;
+
+  // Crop state
+  let isDown = false;
+  let sel = null; // {x,y,w,h}
+
+  function setMode(m) {
+    mode = m;
+    [btnResize, btnCrop, btnFormat].forEach(b => b.classList.remove("active"));
+    if (m === "resize") btnResize.classList.add("active");
+    if (m === "crop") btnCrop.classList.add("active");
+    if (m === "format") btnFormat.classList.add("active");
+    resizeCtrls.style.display = (m === "resize") ? "block" : "none";
+    cropCtrls.style.display   = (m === "crop") ? "block" : "none";
+    formatCtrls.style.display = (m === "format") ? "block" : "none";
+    redraw();
+  }
+
+  btnResize.onclick = () => setMode("resize");
+  btnCrop.onclick   = () => setMode("crop");
+  btnFormat.onclick = () => setMode("format");
+
+  // Upload / Drag & Drop
+  drop.addEventListener("click", () => fileInput.click());
+  drop.addEventListener("dragover", e => { e.preventDefault(); drop.style.background = "#eef4ff"; });
+  drop.addEventListener("dragleave", () => drop.style.background = "" );
+  drop.addEventListener("drop", e => {
+    e.preventDefault();
+    drop.style.background = "";
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener("change", e => {
+    if (e.target.files && e.target.files[0]) loadFile(e.target.files[0]);
+  });
+
+  function loadFile(f) {
+    if (!f.type.startsWith("image/")) { alert("Please select an image file."); return; }
+    const fr = new FileReader();
+    fr.onload = ev => {
+      img = new Image();
+      img.onload = () => {
+        naturalW = img.naturalWidth;
+        naturalH = img.naturalHeight;
+        aspect = naturalW / naturalH;
+        inW.value = naturalW;
+        inH.value = naturalH;
+        inScale.value = 100; scaleVal.textContent = "100%";
+        sel = null;
+        fitCanvasToImage();
+        redraw();
+      };
+      img.src = ev.target.result;
+    };
+    fr.readAsDataURL(f);
+  }
+
+  function fitCanvasToImage() {
+    cv.width = naturalW;
+    cv.height = naturalH;
+  }
+
+  function redraw() {
+    if (!img.src) return;
+    ctx.clearRect(0,0,cv.width,cv.height);
+    ctx.drawImage(img, 0, 0, cv.width, cv.height);
+
+    // crop overlay
+    if (mode === "crop" && sel) {
+      ctx.save();
+      ctx.strokeStyle = "red";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(sel.x, sel.y, sel.w, sel.h);
+
+      ctx.fillStyle = "rgba(0,0,0,0.25)";
+      // dim outside
+      ctx.beginPath();
+      ctx.rect(0,0,cv.width,cv.height);
+      ctx.rect(sel.x, sel.y, sel.w, sel.h);
+      ctx.fill("evenodd");
+      ctx.restore();
+    }
+  }
+
+  // Aspect ratio lock between W/H
+  inW.addEventListener("input", () => {
+    const w = parseInt(inW.value || "0");
+    if (lockAR.checked && w>0) {
+      inH.value = Math.round(w / aspect);
+    }
+  });
+  inH.addEventListener("input", () => {
+    const h = parseInt(inH.value || "0");
+    if (lockAR.checked && h>0) {
+      inW.value = Math.round(h * aspect);
+    }
+  });
+  inScale.addEventListener("input", () => {
+    scaleVal.textContent = inScale.value + "%";
+  });
+
+  // Crop mouse handlers
+  cv.addEventListener("mousedown", (e) => {
+    if (mode !== "crop" || !img.src) return;
+    const r = cv.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    isDown = true;
+    sel = { x, y, w:0, h:0 };
+    redraw();
+  });
+  cv.addEventListener("mousemove", (e) => {
+    if (mode !== "crop" || !isDown || !sel) return;
+    const r = cv.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    sel.w = x - sel.x;
+    sel.h = y - sel.y;
+    redraw();
+  });
+  cv.addEventListener("mouseup", () => { if (mode === "crop") isDown = false; });
+
+  btnReset.addEventListener("click", () => {
+    if (!img.src) return;
+    inW.value = naturalW;
+    inH.value = naturalH;
+    inScale.value = 100; scaleVal.textContent="100%";
+    targetKB.value = "";
+    sel = null;
+    outFmtResize.value = "image/jpeg";
+    outFmtOnly.value = "image/jpeg";
+    outFmtCrop.value = "image/png";
+    fitCanvasToImage();
+    redraw();
+  });
+
+  // Utility: compute bytes from dataURL
+  function dataURLBytes(dataURL) {
+    const idx = dataURL.indexOf("base64,");
+    if (idx === -1) return 0;
+    const base64 = dataURL.slice(idx + 7);
+    // Proper base64 bytes count
+    const padding = (base64.endsWith("==")) ? 2 : (base64.endsWith("=") ? 1 : 0);
+    return (base64.length * 3) / 4 - padding;
+  }
+
+  // Quality search to hit target KB (for JPG/WEBP)
+  async function toTargetSizeDataURL(canvas, mime, targetKB, maxIters=14, tol=0.07) {
+    // tol = ±7%
+    let lo = 0.1, hi = 0.95, best = 0.92;
+    let targetBytes = targetKB * 1024;
+    let out = canvas.toDataURL(mime, best);
+    for (let i=0;i<maxIters;i++){
+      const bytes = dataURLBytes(out);
+      const diff = (bytes - targetBytes) / targetBytes;
+      if (Math.abs(diff) <= tol) return out;
+      if (bytes > targetBytes) {
+        hi = best;
+      } else {
+        lo = best;
+      }
+      best = (lo + hi) / 2;
+      out = canvas.toDataURL(mime, best);
+    }
+    return out; // best effort
+  }
+
+  function makeWorkingCanvas() { return document.createElement("canvas"); }
+
+  btnDownload.addEventListener("click", async () => {
+    if (!img.src) { alert("Please upload an image first."); return; }
+
+    // Build output according to mode
+    let mime = "image/png";
+    let work = makeWorkingCanvas();
+    let wctx = work.getContext("2d");
+
+    if (mode === "resize") {
+      const scale = parseInt(inScale.value || "100") / 100;
+      let w = parseInt(inW.value || naturalW);
+      let h = parseInt(inH.value || naturalH);
+      if (!w || !h) { w = naturalW; h = naturalH; }
+      w = Math.max(1, Math.round(w * scale));
+      h = Math.max(1, Math.round(h * scale));
+
+      work.width = w; work.height = h;
+      wctx.drawImage(img, 0, 0, w, h);
+
+      mime = outFmtResize.value;
+      const wantKB = parseInt(targetKB.value || "0");
+
+      let href;
+      if (wantKB && (mime === "image/jpeg" || mime === "image/webp")) {
+        href = await toTargetSizeDataURL(work, mime, wantKB);
+      } else if (wantKB && mime === "image/png") {
+        alert("PNG lossless hota hai — exact target KB hit karna mushkil. Better result ke liye JPG ya WEBP choose karein.");
+        href = work.toDataURL(mime);
+      } else {
+        // default quality (0.92) used by browsers for jpeg/webp when quality omitted
+        href = work.toDataURL(mime);
+      }
+      triggerDownload(href, `resized_${w}x${h}.${extFromMime(mime)}`);
+
+    } else if (mode === "crop") {
+      if (!sel || sel.w === 0 || sel.h === 0) { alert("Please draw a selection on the image."); return; }
+      // normalize negative drag
+      const sx = sel.w < 0 ? sel.x + sel.w : sel.x;
+      const sy = sel.h < 0 ? sel.y + sel.h : sel.y;
+      const sw = Math.abs(sel.w);
+      const sh = Math.abs(sel.h);
+
+      work.width = sw; work.height = sh;
+      wctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+
+      mime = outFmtCrop.value || "image/png";
+      triggerDownload(work.toDataURL(mime), `cropped_${sw}x${sh}.${extFromMime(mime)}`);
+
+    } else { // format-only
+      work.width = naturalW; work.height = naturalH;
+      wctx.drawImage(img, 0, 0, naturalW, naturalH);
+      mime = outFmtOnly.value || "image/jpeg";
+      triggerDownload(work.toDataURL(mime), `converted.${extFromMime(mime)}`);
+    }
+  });
+
+  function extFromMime(m) {
+    if (m.includes("jpeg")) return "jpg";
+    if (m.includes("png")) return "png";
+    if (m.includes("webp")) return "webp";
+    return "img";
+  }
+
+  function triggerDownload(href, filename) {
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+})();
+</script>
+</body>
+</html>
